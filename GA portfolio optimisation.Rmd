@@ -1,0 +1,807 @@
+Installing all the needed packages and libraries. Setting parameters for graphs.
+
+```{Packages, libraries, and otpions}
+
+install.packages (c ("quantmod", "PerformanceAnalytics", "GA", "tidyverse", 
+                     "dplyr", "jsonlite", "plyr", "rmarkdown", "knitr", 
+                     "tinytex"))
+
+library (quantmod)
+library (GA)
+library (tidyverse)
+library (PortfolioAnalytics)
+library (dplyr) 
+library(knitr)
+library(tinytex)
+
+options (repr.plot.width = 6, repr.plot.height = 3)
+
+```
+
+I have chosen companies that am interested in. Most of them are from different fields; thus, it is a good example of diversification in my opinion. You can see the companies names in "labels."
+
+```{Stocks}
+
+labels <- c ("Pfizer", "Walmart", "Exxon Mobil", "Tesla", "Amazon", 
+"JPMorgan Chase", "Disney", "Coca-Cola", "NIKE", "Meta")
+
+stocks <- c ("PFE", "WMT", "XOM", "TSLA", "AMZN", 
+            "JPM", "DIS", "KO", "NKE", "META")
+
+```
+
+As a main source, I was using Yahoo Finance. The period I decided to take is year 2021. Last four years have been very unstable and non-predictive, both financially speaking and not. It is very hard to build any future - predictive model right now. Economy world wide is still suffering and hugely differ from what it was before most of the crisis which are still affecting us. Yet, I decided to take 2021 and 2022 years for the data, because they are the most recent. Here, I get the data and clean it. I take daily adjusted prices.
+
+```{Data extarct}
+
+# data
+past_prices <- NULL
+for (prices in stocks) 
+  {past_prices <- cbind (past_prices,
+                         getSymbols (prices, src = "yahoo", from = "2021-01-01", 
+                                     to = "2021-12-31", periodicity = 'daily', 
+                                     auto.assign=FALSE) [, 6])}
+past_prices
+
+# get sum of NA in columns
+colSums (is.na (past_prices))
+
+# delete empty values     
+past_prices <- past_prices [apply (past_prices, 1, function (x) all (!is.na (x))), ]
+
+```
+
+The first thing to calculate was a return from the whole period - 2021 year. It could be achieved by dividing last value by the first.
+
+```{Period return}
+
+# period return
+period_return <- as.numeric (as.vector (tail (past_prices, n = 1))) /  
+  as.numeric (as.vector (past_prices [1, ]))
+
+```
+
+To calculate daily returns - PnL for every stock each day - I use 'dailyReturn' function. It could be calculated by hand too: 'daily_return \<- diff (past_prices$PFE.Adjusted) / lag (past_prices$PFE.Adjusted)'
+
+```{Daily return}
+
+# daily return
+daily_return <- data.frame (merge (dailyReturn (past_prices$PFE.Adjusted), 
+                                 dailyReturn (past_prices$WMT.Adjusted),
+                                 dailyReturn (past_prices$XOM.Adjusted), 
+                                 dailyReturn (past_prices$TSLA.Adjusted),
+                                 dailyReturn (past_prices$AMZN.Adjusted), 
+                                 dailyReturn (past_prices$JPM.Adjusted),
+                                 dailyReturn (past_prices$DIS.Adjusted), 
+                                 dailyReturn (past_prices$KO.Adjusted),
+                                 dailyReturn (past_prices$NKE.Adjusted), 
+                                 dailyReturn (past_prices$META.Adjusted)))
+
+# change column names
+colnames (daily_return) <- labels
+daily_return
+summary (daily_return)
+table.Stats (daily_return)
+
+```
+
+For visualisation we can use cumulative return and draw downs.
+
+```{Charts}
+
+# chart
+chart.CumReturns (daily_return)
+chart.Drawdown (daily_return)
+
+```
+
+And as the test data, I use 2022 year. Extracting 'future' data and preparing it.
+
+```{Future data extarct}
+
+# 'future' data
+current_prices <- NULL
+for (prices in stocks) 
+{current_prices <- cbind (current_prices, 
+                          getSymbols (prices, src = "yahoo", from = "2022-01-01",
+                                      to = "2022-12-31", periodicity = 'daily', 
+                                      auto.assign = FALSE) [, 6])}
+current_prices 
+
+# get sum of NA in columns
+colSums (is.na (current_prices))
+
+# delete empty values     
+current_prices <- current_prices [apply (current_prices, 1, function (x) all (!is.na (x))), ]
+
+
+```
+
+Calculating period return of the 2022 data.
+
+```{Current period return}
+
+# current period return
+period_return_cur <- as.numeric (as.vector (tail (current_prices, n = 1))) /  
+  as.numeric (as.vector (current_prices [1, ]))
+
+# current daily return
+daily_return_cur <- data.frame (merge (dailyReturn (current_prices$PFE.Adjusted), 
+                                   dailyReturn (current_prices$WMT.Adjusted),
+                                   dailyReturn (current_prices$XOM.Adjusted), 
+                                   dailyReturn (current_prices$TSLA.Adjusted),
+                                   dailyReturn (current_prices$AMZN.Adjusted), 
+                                   dailyReturn (current_prices$JPM.Adjusted),
+                                   dailyReturn (current_prices$DIS.Adjusted), 
+                                   dailyReturn (current_prices$KO.Adjusted),
+                                   dailyReturn (current_prices$NKE.Adjusted), 
+                                   dailyReturn (current_prices$META.Adjusted)))
+
+# change column names
+colnames (daily_return_cur) <- labels
+daily_return_cur
+typeof (daily_return_cur)
+
+summary (daily_return_cur)
+table.Stats (daily_return_cur)
+
+```
+
+Same plotting as previously.
+
+```{Charts 2022}
+
+# chart
+chart.CumReturns (daily_return_cur)
+chart.Drawdown (daily_return_cur)
+
+```
+
+First, I created random weights which I will use.
+
+```{Random weights}
+
+# assign random weights
+weight <- runif (10)
+weights <- weight / sum (weight)
+
+weight_stocks <- cbind (stocks, weights)
+weight_stocks
+
+```
+
+Creating and evaluating a portfolio based on the random weights. The score was wealth index for the last period - 30.12.2021 and 30.12.2022 respectively. The results for the 'future' prediction and current returns are bad. We will see that later when compared with other results.
+
+```{Portfolio performance with random weights}
+
+# Default portfolio
+
+# evaluate default portfolio performance (random weights)
+portfolio_return <- Return.portfolio (daily_return, weights = weights)
+Return.portfolio(daily_return, weights = weights, contribution = TRUE)
+portfolio_performance <- Return.portfolio (daily_return, weights = weights, 
+                                           wealth.index = TRUE)
+portfolio_performance_score_d_r <- tail (portfolio_performance, n=1)
+portfolio_performance_score_d_r 
+
+# evaluate default portfolio performance of unseen data (random weights)
+portfolio_return <- Return.portfolio (daily_return_cur, weights = weights)
+Return.portfolio(daily_return_cur, weights = weights, contribution = TRUE)
+portfolio_performance <- Return.portfolio (daily_return_cur, weights = weights, 
+                                           wealth.index = TRUE)
+portfolio_performance_score_d_r_cur <- tail (portfolio_performance, n=1)
+portfolio_performance_score_d_r_cur 
+
+```
+
+Now doing the same thing with equal weights. Results are better than with the random weighing.
+
+```{Equal weights}
+
+# assign equal weights
+weight <- 1 / length (stocks)
+weights <- rep (weight, length (stocks)) 
+weight_stocks <- cbind (stocks, weight)
+weight_stocks
+
+```
+
+```{Portfolio performance with equal weights}
+
+# evaluate default portfolio performance (equal weights)
+portfolio_return <- Return.portfolio (daily_return, weights = weights)
+Return.portfolio (daily_return, weights = weights, contribution = TRUE)
+portfolio_performance <- Return.portfolio (daily_return, weights = weights, 
+                                           wealth.index = TRUE)
+portfolio_performance_score_d_e <- tail (portfolio_performance, n=1)
+portfolio_performance_score_d_e
+
+# evaluate default portfolio performance of unseen data (equal weights)
+portfolio_return <- Return.portfolio (daily_return_cur, weights = weights)
+Return.portfolio (daily_return_cur, weights = weights, contribution = TRUE)
+portfolio_performance <- Return.portfolio (daily_return_cur, weights = weights, 
+                                           wealth.index = TRUE)
+portfolio_performance_score_d_e_cur <- tail (portfolio_performance, n=1)
+portfolio_performance_score_d_e_cur
+
+```
+
+For the first fitness function, I decided to take Mean - Variance approach of the Modern Portfolio Theory. In order to make this fitness function I need to have mean of the returns (which represents the portfolio return) and standard deviation of the returns (which represents risks of the portfolio).
+
+\`\`\`{Mean-Variance portfolio}
+
+# Mean-Variance portfolio
+
+# mean daily returns
+
+mean_return \<- apply (daily_return, MARGIN=2, mean) mean_return
+
+# risk (covariance of the returns, st.dev)
+
+risks \<- sapply (daily_return, sd) risks
+
+    To create Mean-Variance fitness function, we need to maximise return and minimise risk. A value of ratio between return and risk is the function result, which will be passed to Genetic Algorithm as an evaluation parameter. X is weight. Sum of weights should always be equal to 1.
+
+    ```{Mean-Variance fitness function}
+
+    # Markowitz / Mean-Variance / MVO / MVP
+    # fitness function (equal weights)
+    weightsum <- 1
+
+    fit_fun <- function (x) {
+      current_return <- x %*% mean_return
+      current_risk <- x %*% risks
+      return (current_return / current_risk)
+    }
+
+    fit_fun(weights)
+
+Genetic algorithm will find the best weights for the portfolio.
+
+```{Genetic algorithm}
+
+# GA
+GA <- ga (type = "real-valued", fitness = fit_fun, 
+      lower = rep (0, ncol (daily_return)), 
+      upper = rep (1, ncol (daily_return)), 
+      popSize = 100, maxiter = 200, run = 50, monitor = FALSE, 
+      seed = 42)
+
+real_solution <- GA@solution / sum(GA@solution)
+real_solution
+
+summary (GA)
+plot (GA)
+sum (real_solution)
+real_solution_vec <- as.numeric (as.vector (real_solution))
+
+```
+
+Evaluating portfolios based on the random weights. The result is good.
+
+\`\`\`{Mean-Variance portfolio performance with equal weights}
+
+# evaluate Mean-Variance portfolio performance (equal weights)
+
+portfolio_return \<- Return.portfolio (daily_return, weights = real_solution_vec) Return.portfolio(daily_return, weights = real_solution_vec, contribution = TRUE) portfolio_performance \<- Return.portfolio (daily_return, weights = real_solution_vec, wealth.index = TRUE) portfolio_performance_score_mv_e \<- tail (portfolio_performance, n=1) portfolio_performance_score_mv_e
+
+# evaluate Mean-Variance portfolio performance of unseen data (equal weights)
+
+portfolio_return \<- Return.portfolio (daily_return_cur, weights = real_solution_vec) Return.portfolio(daily_return_cur, weights = real_solution_vec, contribution = TRUE) portfolio_performance \<- Return.portfolio (daily_return_cur, weights = real_solution_vec, wealth.index = TRUE) portfolio_performance_score_mv_cur_e \<- tail (portfolio_performance, n=1) portfolio_performance_score_mv_cur_e
+
+    Let's do the same thing for the random weights. It is important to check both of weights because it is important for GA where its initial position is. Any result from the GA could be just a local maximum, for instance, but not global one. However, the results are the same as the above with the equal weights.
+
+    ```{Mean-Variance portfolio performance with random weights}
+
+    # assign random weights
+    weight <- runif (10)
+    weights <- weight / sum (weight)
+
+    # fitness function (random weights)
+    weightsum <- 1
+
+    fit_fun <- function (x) {
+      current_return <- x %*% mean_return
+      current_risk <- x %*% risks
+      return (current_return / current_risk)
+    }
+    fit_fun(weights)
+
+    # GA
+    GA <- ga (type = "real-valued", fitness = fit_fun, 
+              lower = rep (0, ncol (daily_return)), 
+              upper = rep (1, ncol (daily_return)), 
+              popSize = 100, maxiter = 200, run = 50, monitor = FALSE, 
+              seed = 42)
+
+    real_solution <- GA@solution / sum(GA@solution)
+    real_solution
+
+    summary (GA)
+    plot (GA)
+    sum (real_solution)
+    typeof (real_solution)
+    real_solution_vec <- as.numeric (as.vector (real_solution))
+
+    # evaluate Mean-Variance portfolio performance (random weights)
+    portfolio_return <- Return.portfolio (daily_return, weights = real_solution_vec)
+    Return.portfolio(daily_return, weights = real_solution_vec, contribution = TRUE)
+    portfolio_performance <- Return.portfolio (daily_return, 
+                                               weights = real_solution_vec, 
+                                               wealth.index = TRUE)
+    portfolio_performance_score_mv_r <- tail (portfolio_performance, n=1)
+    portfolio_performance_score_mv_r
+
+    # evaluate Mean-Variance portfolio performance of unseen data (random weights)
+    portfolio_return <- Return.portfolio (daily_return_cur, weights = real_solution_vec)
+    Return.portfolio(daily_return_cur, weights = real_solution_vec, contribution = TRUE)
+    portfolio_performance <- Return.portfolio (daily_return_cur, 
+                                               weights = real_solution_vec, 
+                                               wealth.index = TRUE)
+    portfolio_performance_score_mv_cur_r <- tail (portfolio_performance, n=1)
+    portfolio_performance_score_mv_cur_r
+
+For the second evaluation function I decided to take Sharpe Ratio. The main idea behind this ratio is to minimize risks.
+
+"Sharpe Ratio = (Expected portfolio return - Risk-free rate of return) / Standard deviation of portfolio return."
+
+"Real risk-free rate = subtract the current inflation rate from the yield of the Treasury bond matching investment duration."
+
+I know that many scientific papers disregard risk free rate and take it as '0'; but I felt that it is wrong and inaccurate as there is no such thing as 0 risk free rate in reality. Here I decided to change previously chosen stocks to only the US companies stocks; because risk free rate differs from country to country, and with only Americans stocks I can take the US risk free rate. The best representative of the risk free rate for a country is a government bond usually - the safest thing you can invest in. This applies to the US stocks too.
+
+The yearly yield of the US Treasury bond is 5.052 %. (Source: <https://tradingeconomics.com/united-states/52-week-bill-yield>)
+
+The current inflation rate is 6.41 %. (Source: <https://ycharts.com/indicators/us_inflation_rate>)
+
+However, because I use daily returns I was needed to convert the yield and the inflation to daily compound rate.
+
+"Compound daily interest rate = (1 + year value) \^ (1/365) -- 1"
+
+```{Sharpe ratio}
+
+# current inflation rate daily
+inflation <- 1 - ((1 - 0.0641) ^ (1 / 365))
+
+# yield of treasury bond daily
+yield <- ((1 + 0.05052) ^ (1 / 365)) - 1
+
+```
+
+Fitness function is following the formula for the Sharpe ratio.
+
+```{Sharpe ratio (minimize risk) fitness function (equal weights)}
+
+# fitness function (random weights)
+sharpe <- function (x) {
+  return ((x %*% period_return) - (yield - inflation)) / (x %*% risks)
+}
+
+```
+
+The same GA is used.
+
+```{Genetic algorithm}
+
+# GA2
+GA2 <- ga (type = "real-valued", fitness = sharpe, 
+          lower = rep (0, ncol(daily_return)), 
+          upper = rep (1, ncol(daily_return)), 
+          popSize = 100, maxiter = 200, run = 50, monitor = FALSE, 
+          seed = 42)
+
+real_solution <- GA2@solution / sum (GA2@solution)
+real_solution
+
+summary (GA2)
+plot (GA2)
+sum (real_solution)
+real_solution_vec <- as.numeric (as.vector (real_solution))
+
+```
+
+The results are worse than the previous ones.
+
+```{Sharpe ratio portfolio performance with random weights}
+
+# evaluate Sharpe Ratio portfolio performance (random weights)
+portfolio_return <- Return.portfolio (daily_return, weights = real_solution_vec)
+Return.portfolio(daily_return, weights = real_solution_vec, contribution = TRUE)
+portfolio_performance <- Return.portfolio (daily_return, 
+                                           weights = real_solution_vec, 
+                                           wealth.index = TRUE)
+portfolio_performance_score_sr_r <- tail (portfolio_performance, n=1)
+portfolio_performance_score_sr_r
+
+# evaluate Sharpe Ratio portfolio performance of unseen data (random weights)
+portfolio_return <- Return.portfolio (daily_return_cur, weights = real_solution_vec)
+Return.portfolio(daily_return_cur, weights = real_solution_vec, contribution = TRUE)
+portfolio_performance <- Return.portfolio (daily_return_cur, 
+                                           weights = real_solution_vec, 
+                                           wealth.index = TRUE)
+portfolio_performance_score_sr_cur_r <- tail (portfolio_performance, n=1)
+portfolio_performance_score_sr_cur_r
+
+```
+
+Do the same portfolio evaluation for the equal weights. The results are the same as before.
+
+```{Sharpe ratio portfolio performance with equal weights}
+
+# assign equal weights
+weight <- 1 / length (stocks)
+weights <- rep (weight, length (stocks)) 
+
+# fitness function (equal weights)
+sharpe <- function (x) {
+  return ((x %*% period_return) - (yield - inflation)) / (x %*% risks)
+}
+
+# GA2
+GA2 <- ga (type = "real-valued", fitness = sharpe, 
+           lower = rep (0, ncol(daily_return)), 
+           upper = rep (1, ncol(daily_return)), 
+           popSize = 100, maxiter = 200, run = 50, monitor = FALSE, 
+           seed = 42)
+
+real_solution <- GA2@solution / sum (GA2@solution)
+real_solution
+
+summary (GA2)
+plot (GA2)
+sum (real_solution)
+real_solution_vec <- as.numeric (as.vector (real_solution))
+
+# evaluate Sharpe Ratio portfolio performance (equal weights)
+portfolio_return <- Return.portfolio (daily_return, weights = real_solution_vec)
+Return.portfolio(daily_return, weights = real_solution_vec, contribution = TRUE)
+portfolio_performance <- Return.portfolio (daily_return, 
+                                           weights = real_solution_vec, 
+                                           wealth.index = TRUE)
+portfolio_performance_score_sr_e <- tail (portfolio_performance, n=1)
+portfolio_performance_score_sr_e
+
+# evaluate Sharpe Ratio portfolio performance of unseen data (equal weights)
+portfolio_return <- Return.portfolio (daily_return_cur, weights = real_solution_vec)
+Return.portfolio(daily_return_cur, weights = real_solution_vec, contribution = TRUE)
+portfolio_performance <- Return.portfolio (daily_return_cur, 
+                                           weights = real_solution_vec, 
+                                           wealth.index = TRUE)
+portfolio_performance_score_sr_cur_e <- tail (portfolio_performance, n=1)
+portfolio_performance_score_sr_cur_e
+
+```
+
+For the third examination I wanted to take Sortino ratio at first. Sortino ratio is focused on maximising a return from a portfolio.
+
+"Sortino ratio = ((Actual or expected return) - Risk-free rate of return) / Standard deviation of the Negative Asset Return."
+
+But then, closely reading the assignment I saw the point about function modification - this could be understood as changing a fitness function to a different one OR modifying the already existing function with different parameters. As a result, I modified the Mean Variance function and made variation of it which maximize a return. It was simple modification - just disregard the risk.
+
+```{Variation of Mean Variance with return maximization}
+
+# Variation of Mean Variance with return maximization
+# maximizing return (equal weights)
+max_return_fun <- function (x) {
+  x <- x / sum (x)  
+  current_return <- x %*% mean_return
+  return (current_return)
+}
+max_return_fun (weights)
+
+```
+
+The results are better than with the Sharpe ratio.
+
+```{Variation of Mean Variance with return maximization portfolio performance with equal weights}
+
+# GA3
+GA3 <- ga (type = "real-valued", fitness = max_return_fun, 
+           lower = rep (0, ncol (daily_return)), 
+           upper = rep (1, ncol (daily_return)), 
+           popSize = 100, maxiter = 200, run = 50, monitor = FALSE, 
+           seed = 42)
+
+real_solution <- GA3@solution / sum (GA3@solution)
+real_solution
+
+summary (GA3)
+plot (GA3)
+sum (real_solution)
+real_solution_vec <- as.numeric (as.vector (real_solution))
+
+# evaluate Mean-Variance with return maximization portfolio performance (equal weights)
+portfolio_return <- Return.portfolio (daily_return, weights = real_solution_vec)
+Return.portfolio(daily_return, weights = real_solution_vec, contribution = TRUE)
+portfolio_performance <- Return.portfolio (daily_return, 
+                                           weights = real_solution_vec, 
+                                           wealth.index = TRUE)
+portfolio_performance_score_mv_rm_e <- tail (portfolio_performance, n=1)
+portfolio_performance_score_mv_rm_e
+  
+# evaluate Mean-Variance with return maximization portfolio performance of unseen data (equal weights)
+portfolio_return <- Return.portfolio (daily_return_cur, weights = real_solution_vec)
+Return.portfolio(daily_return_cur, weights = real_solution_vec, contribution = TRUE)
+portfolio_performance <- Return.portfolio (daily_return_cur, 
+                                           weights = real_solution_vec, 
+                                           wealth.index = TRUE)
+portfolio_performance_score_mv_rm_cur_e <- tail (portfolio_performance, n=1)
+portfolio_performance_score_mv_rm_cur_e
+
+```
+
+Do the same evaluation with the random weights. Results are the same.
+
+```{Variation of Mean Variance with return maximization portfolio performance with random weights}
+
+# assign random weights
+weight <- runif (10)
+weights <- weight / sum (weight)
+
+# maximizing return (random weights)
+max_return_fun <- function (x) {
+  x <- x / sum (x)  
+  current_return <- x %*% mean_return
+  return (current_return)
+}
+max_return_fun (weights)
+
+# GA3
+GA3 <- ga (type = "real-valued", fitness = max_return_fun, 
+           lower = rep (0, ncol (daily_return)), 
+           upper = rep (1, ncol (daily_return)), 
+           popSize = 100, maxiter = 200, run = 50, monitor = FALSE, 
+           seed = 42)
+
+real_solution <- GA3@solution / sum (GA3@solution)
+real_solution
+
+summary (GA3)
+plot (GA3)
+sum (real_solution)
+real_solution_vec <- as.numeric (as.vector (real_solution))
+
+# evaluate Mean-Variance with return maximization portfolio performance (random weights)
+portfolio_return <- Return.portfolio (daily_return, weights = real_solution_vec)
+Return.portfolio(daily_return, weights = real_solution_vec, contribution = TRUE)
+portfolio_performance <- Return.portfolio (daily_return, 
+                                           weights = real_solution_vec, 
+                                           wealth.index = TRUE)
+portfolio_performance_score_mv_rm_r <- tail (portfolio_performance, n=1)
+portfolio_performance_score_mv_rm_r
+
+# evaluate Mean-Variance with return maximization portfolio performance of unseen data (random weights)
+portfolio_return <- Return.portfolio (daily_return_cur, weights = real_solution_vec)
+Return.portfolio(daily_return_cur, weights = real_solution_vec, contribution = TRUE)
+portfolio_performance <- Return.portfolio (daily_return_cur, 
+                                           weights = real_solution_vec, 
+                                           wealth.index = TRUE)
+portfolio_performance_score_mv_rm_cur_r <- tail (portfolio_performance, n=1)
+portfolio_performance_score_mv_rm_cur_r
+
+```
+
+Let's collect all the portfolio performance scores and find the best one. The best result comes from the Mean-Variance portfolio (equal and random weights).
+
+```{Portfolio performance scores}
+
+# portfolio performance scores
+portfolio_performance_scores <- data.frame (portfolio_performance_score_d_r, 
+                                       portfolio_performance_score_d_r_cur,
+                                       portfolio_performance_score_d_e, 
+                                       portfolio_performance_score_d_e_cur,
+                                       portfolio_performance_score_mv_e, 
+                                       portfolio_performance_score_mv_cur_e,
+                                       portfolio_performance_score_mv_r, 
+                                       portfolio_performance_score_mv_cur_r,
+                                       portfolio_performance_score_sr_r, 
+                                       portfolio_performance_score_sr_cur_r,
+                                       portfolio_performance_score_sr_e,
+                                       portfolio_performance_score_sr_cur_e,
+                                       portfolio_performance_score_mv_rm_e,
+                                       portfolio_performance_score_mv_rm_cur_e,
+                                       portfolio_performance_score_mv_rm_r,
+                                       portfolio_performance_score_mv_rm_cur_r)
+
+portfolios <- c ("Random weights", "Unseen data random weights", 
+                 "Equal weights", "Unseen data equal weights", 
+                 "Mean-Variance equal weights", 
+                 "Mean-Variance unseen data equal weights", 
+                 "Mean-Variance random weights", 
+                 "Mean-Variance unseen data random weights", 
+                 "Sharpe Ratio random weights", 
+                 "Sharpe Ratio unseen data random weights",
+                 "Sharpe Ratio equal weights", 
+                 "Sharpe Ratio unseen data equal weights", 
+                 "Mean-Variance return maximization equal weights", 
+                 "Mean-Variance return maximization unseen data equal weights",
+                 "Mean-Variance return maximization random weights", 
+                 "Mean-Variance return maximization unseen data random weights")
+
+colnames (portfolio_performance_scores) <- portfolios
+portfolio_performance_scores
+unseen_portfolio_performance_scores <- portfolio_performance_scores [ , -c (1, 3, 5, 7, 9, 11, 13, 15)]
+unseen_portfolio_performance_scores
+best_portfolio <- max(unseen_portfolio_performance_scores)
+best_portfolio
+
+```
+
+For larger data set, I have taken top 50 trending companies on Yahoo Finance and Dow Jones by market capitalization for 2022. I use modified Mean-Variance fitness function for the GA.
+
+```{50 stocks}
+
+tickers_50 <- c ("PFE", "WMT", "XOM", "TSLA", "AMZN", 
+                 "JPM", "DIS", "KO", "NKE", "META",
+                 "AMC", "ZM", "WDAY", "FSR", "OXY",
+                 "LHDX", "TGT", "OKE", "HIMS", "UNP",
+                 "SGEN", "FUBO", "BMRN", "TREX", "CFRX",
+                 "RIVN", "DISH", "RETA", "AWIN", "IIPR", 
+                 "RC", "CSCO", "PGNY", "MANU", "MKSI",
+                 "NARI", "CRM", "NAT", "AAPL", "GOOG",
+                 "MSFT", "MCD", "NFLX", "TSM", "SONO",
+                 "V", "PG", "CVX", "HD", "JNJ")
+
+new_data <- NULL
+for (t in tickers_50) 
+  {new_data <- cbind (new_data, 
+                          getSymbols (t, src = "yahoo", from = "2022-01-01",
+                                      to = "2022-12-31", periodicity = 'daily', 
+                                      auto.assign = FALSE) [, 6])}
+new_data
+
+# get sum of NA in columns
+colSums (is.na (new_data))
+
+# delete empty values     
+new_data <- new_data [apply (new_data, 1, function (x) all (!is.na (x))), ]
+
+# daily return
+daily_return_new <- na.omit (ROC (new_data))
+                                
+summary (daily_return_new)
+table.Stats (daily_return_new)
+
+# chart
+chart.CumReturns (daily_return_new)
+chart.Drawdown (daily_return_new)
+
+# mean daily returns
+mean_return_new <- apply (daily_return_new, MARGIN = 2, mean)
+mean_return_new
+
+# risk (covariance of the returns, st.dev)
+risks_new <- sapply (daily_return_new, sd)
+risks_new
+
+# assign random weights
+weight <- runif (50)
+weights <- weight / sum (weight)
+
+weight_stocks <- cbind (tickers_50, weights)
+weight_stocks
+
+# fitness function (random weights)
+weightsum <- 1
+
+fit_fun_new <- function (x) {
+  current_return_new <- x %*% mean_return_new
+  current_risk_new <- x %*% risks_new
+  if (current_return_new > current_risk_new)
+    return (1)
+  else (current_return_new / current_risk_new)
+}
+fit_fun_new (weights)
+
+```
+
+I use GA for choosing top 10 shares out of 50. Now I can have weights for future portfolio of top 10 shares.
+
+```{Top 10 stocks}
+
+# GA4
+GA4 <- ga (type = "real-valued", fitness = fit_fun_new, 
+           lower = rep (0, ncol (daily_return_new)), 
+           upper = rep (1, ncol (daily_return_new)), 
+           popSize = 100, maxiter = 200, run = 50, monitor = FALSE, 
+           seed = 42)
+
+GA4@solution
+summary (GA4)
+plot (GA4)
+
+solutions <- GA4@solution
+
+# Taking top shares
+top_list <- NULL
+n <- 0
+while (n < 10) {
+  top_list <- cbind (top_list, which.max(solutions))
+  solutions [which.max(solutions)] <- 0
+  n <- n + 1
+}
+top_list
+
+top_table <- cbind (GA4@solution[38], GA4@solution[34], GA4@solution[28], 
+                    GA4@solution[15], GA4@solution[3], GA4@solution[50], 
+                    GA4@solution[18], GA4@solution[19], GA4@solution[23], 
+                    GA4@solution[20])
+
+colnames (top_table) <- c ("NAT", "MANU", "RETA", "OXY", "XOM", 
+                          "JNJ", "OKE", "HIMS", "BMRN", "UNP")
+
+top_table 
+
+real_solution_new <- top_table / sum (top_table)
+sum(real_solution_new)
+weights_new_vec <- as.numeric (as.vector (real_solution_new))
+
+```
+
+I decided to use Mean-Variance function because it had the best results.
+
+```{Final evaluation}
+
+daily_return_new_top <- cbind (daily_return_new [ ,"NAT.Adjusted"],
+                               daily_return_new [ ,"MANU.Adjusted"],
+                               daily_return_new [ ,"RETA.Adjusted"],
+                               daily_return_new [ ,"OXY.Adjusted"],
+                               daily_return_new [ ,"XOM.Adjusted"],
+                               daily_return_new [ ,"JNJ.Adjusted"],
+                               daily_return_new [ ,"OKE.Adjusted"],
+                               daily_return_new [ ,"HIMS.Adjusted"],
+                               daily_return_new [ ,"BMRN.Adjusted"],
+                               daily_return_new [ ,"UNP.Adjusted"])
+
+summary (daily_return_new_top)
+table.Stats (daily_return_new_top)
+
+# chart
+chart.CumReturns (daily_return_new_top)
+chart.Drawdown (daily_return_new_top)
+
+# mean daily returns
+mean_return_new_top <- apply (daily_return_new_top, MARGIN = 2, mean)
+mean_return_new_top
+
+# risk (covariance of the returns, st.dev)
+risks_new_top <- sapply (daily_return_new_top, sd)
+risks_new_top
+
+# Mean-Variance portfolio
+# Fit Fun
+weightsum <- 1
+
+fit_fun_new_fin <- function (x) {
+  current_return_new_top <- x %*% mean_return_new_top
+  current_risk_new_top <- x %*% risks_new_top
+  return (current_return_new_top / current_risk_new_top)
+}
+fit_fun_new_fin (real_solution_new_vec)
+
+# GA5
+GA5 <- ga (type = "real-valued", fitness = fit_fun_new_fin, 
+           lower = rep (0, ncol (daily_return_new_top)), 
+           upper = rep (1, ncol (daily_return_new_top)), 
+           popSize = 100, maxiter = 200, run = 50, monitor = FALSE, 
+           seed = 42)
+
+real_solution_top <- GA5@solution / sum (GA5@solution)
+real_solution_top
+
+summary (GA5)
+plot (GA5)
+sum (real_solution_top)
+real_solution_top_vec <- as.numeric (as.vector (real_solution_top))
+
+# evaluate
+portfolio_return <- Return.portfolio (daily_return_new_top, weights = real_solution_top_vec)
+Return.portfolio(daily_return_new_top, weights = real_solution_top_vec, contribution = TRUE)
+portfolio_performance <- Return.portfolio (daily_return_new_top, 
+                                           weights = real_solution_top_vec, 
+                                           wealth.index = TRUE)
+portfolio_performance_score_top <- tail (portfolio_performance, n=1)
+portfolio_performance_score_top
+
+```
+
+Result is very good - I have achieved the best performance score! It is a success.
